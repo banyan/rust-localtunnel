@@ -8,7 +8,7 @@ use hyper::header::Connection;
 fn main() {
     let client = Client::new();
 
-    let mut res = client.get("http://localhost:1235/?new")
+    let mut res = client.get("http://localtunnel:1235/?new")
         .header(Connection::close())
         .send().unwrap();
 
