@@ -8,8 +8,7 @@ use std::net::Shutdown;
 use std::io::{Read, Write};
 use std::str;
 
-// fn handle_client(mut conn_remote: TcpStream) -> Result<i32, Error> {
-fn handle_client(mut conn_remote: TcpStream) -> () {
+fn handle_stream(mut conn_remote: TcpStream) -> () {
     let host = "localhost:3000";
     let mut conn_local = TcpStream::connect(host).unwrap();
 
@@ -78,6 +77,6 @@ fn main() {
     let listener = TcpListener::bind("localhost:1236").unwrap();
     for stream in listener.incoming() {
         let s = stream.unwrap();
-        handle_client(s);
+        handle_stream(s);
     }
 }
