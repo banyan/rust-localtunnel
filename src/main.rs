@@ -1,5 +1,9 @@
 extern crate hyper;
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 use hyper::Client;
 use hyper::header::Connection;
 use std::io::{self, Read, Write};
@@ -17,17 +21,18 @@ fn handle_stream(mut remote_stream: TcpStream) -> () {
 
     let mut buf = [0; 128];
     let mut written = 0;
+
     loop {
         let len = match remote_stream.read(&mut buf) {
             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => break,
-            Ok(0) => break,
+            Err(e)  => break,
+            Ok(0)   => break,
             Ok(len) => len
         };
-        println!("len 1: {:?}", len);
+        debug!("Read {} bytes from remote stream", len);
         let _ = local_stream.write_all(&buf[..len]);
         written += len as u64;
-        println!("written 1: {:?}", written);
+        debug!("Wrote {} bytes to local stream", written);
     }
 
     let mut buf2 = [0; 128];
@@ -36,14 +41,14 @@ fn handle_stream(mut remote_stream: TcpStream) -> () {
     loop {
         let len = match local_stream.read(&mut buf2) {
             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => break,
-            Ok(0) => break,
+            Err(e)  => break,
+            Ok(0)   => break,
             Ok(len) => len
         };
-        println!("len 2: {:?}", len);
+        debug!("Read {} bytes from local stream", len);
         let _ = remote_stream.write_all(&buf2[..len]);
         written += len as u64;
-        println!("written 2: {:?}", written);
+        debug!("Wrote {} bytes to remote stream", written);
     }
 
     let _ = local_stream.shutdown(Shutdown::Both);
@@ -51,6 +56,7 @@ fn handle_stream(mut remote_stream: TcpStream) -> () {
 }
 
 fn main() {
+    env_logger::init().unwrap();
     let client = Client::new();
 
     let mut res = client.get("http://localhost:1236/?new")
