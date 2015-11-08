@@ -2,64 +2,52 @@ extern crate hyper;
 
 use hyper::Client;
 use hyper::header::Connection;
-use std::net::TcpListener;
-use std::net::TcpStream;
-use std::net::Shutdown;
-use std::io::{Read, Write};
-use std::str;
+use std::io::{self, Read, Write};
+use std::net::{TcpListener, TcpStream, Shutdown};
+use std::time::Duration;
+use std::io::BufWriter;
+use std::thread;
 
-fn handle_stream(mut conn_remote: TcpStream) -> () {
+fn handle_stream(mut remote_stream: TcpStream) -> () {
     let host = "localhost:3000";
-    let mut conn_local = TcpStream::connect(host).unwrap();
+    let mut local_stream = TcpStream::connect(host).unwrap();
 
-    let mut buf = [0; 512];
+    remote_stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    local_stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+
+    let mut buf = [0; 128];
+    let mut written = 0;
     loop {
-        let _ = match conn_remote.read(&mut buf) {
-            Err(e) => panic!("Got an error: {}", e),
-            Ok(m) => {
-                if m == 0 {
-                    break;
-                }
-                m
-            },
+        let len = match remote_stream.read(&mut buf) {
+            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => break,
+            Ok(0) => break,
+            Ok(len) => len
         };
-
-        let _ = match conn_local.write(&mut buf) {
-            Err(e) => panic!("Got an error: {}", e),
-            Ok(m) => {
-                if m == 0 {
-                    break;
-                }
-                m
-            },
-        };
-
-        let mut buf : [u8; 512] = [0; 512];
-        let _ = match conn_local.read(&mut buf) {
-            Err(e) => panic!("Got an error: {}", e),
-            Ok(m) => {
-                if m == 0 {
-                    break;
-                }
-                m
-            },
-        };
-
-        // let foo = str::from_utf8(&buf).unwrap();
-        // println!("Received {:?}", foo);
-
-        let _ = match conn_remote.write(&buf) {
-            Err(_) => break,
-            Ok(m) => {
-                if m == 0 {
-                    break;
-                }
-                continue;
-            },
-        };
+        println!("len 1: {:?}", len);
+        let _ = local_stream.write_all(&buf[..len]);
+        written += len as u64;
+        println!("written 1: {:?}", written);
     }
-    println!("a");
-    conn_local.shutdown(Shutdown::Both);
+
+    let mut buf2 = [0; 128];
+    written = 0;
+
+    loop {
+        let len = match local_stream.read(&mut buf2) {
+            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => break,
+            Ok(0) => break,
+            Ok(len) => len
+        };
+        println!("len 2: {:?}", len);
+        let _ = remote_stream.write_all(&buf2[..len]);
+        written += len as u64;
+        println!("written 2: {:?}", written);
+    }
+
+    let _ = local_stream.shutdown(Shutdown::Both);
+    let _ = remote_stream.shutdown(Shutdown::Both);
 }
 
 fn main() {
@@ -76,7 +64,13 @@ fn main() {
 
     let listener = TcpListener::bind("localhost:1236").unwrap();
     for stream in listener.incoming() {
-        let s = stream.unwrap();
-        handle_stream(s);
+        match stream {
+            Ok(stream) => {
+                thread::spawn(move || {
+                    handle_stream(stream);
+                });
+            }
+            Err(e) => panic!("Got an error: {}", e)
+        }
     }
 }
