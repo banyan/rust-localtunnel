@@ -1,5 +1,8 @@
 extern crate hyper;
 
+extern crate rustc_serialize;
+use rustc_serialize::json;
+
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -12,20 +15,38 @@ use std::time::Duration;
 use std::io::BufWriter;
 use std::thread;
 
+const READ_TIMEOUT_MILLIS: u64 = 100;
+
 fn handle_stream(mut remote_stream: TcpStream) -> () {
     let host = "localhost:3000";
     let mut local_stream = TcpStream::connect(host).unwrap();
 
-    remote_stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
-    local_stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    remote_stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MILLIS))).unwrap();
+    local_stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MILLIS))).unwrap();
 
-    let mut buf = [0; 128];
+    let mut buf = [0; 512];
     let mut written = 0;
 
     loop {
         let len = match remote_stream.read(&mut buf) {
-            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e)  => break,
+            Err(e) => {
+                match e.kind() {
+                    io::ErrorKind::WouldBlock => {
+                        debug!("a: would have blocked: {:?}", e.kind());
+                        if written != 0 {
+                            // FIXME more better way to distinguish
+                            break
+                        } else {
+                            continue
+                        }
+                    },
+                    io::ErrorKind::Interrupted => {
+                        debug!("a: interrupted: {:?}", e.kind());
+                        continue
+                    },
+                    _ => panic!("a: Got an error: {}", e)
+                }
+            },
             Ok(0)   => break,
             Ok(len) => len
         };
@@ -35,14 +56,25 @@ fn handle_stream(mut remote_stream: TcpStream) -> () {
         debug!("Wrote {} bytes to local stream", written);
     }
 
-    let mut buf2 = [0; 128];
+    let mut buf2 = [0; 512];
     written = 0;
 
     loop {
         let len = match local_stream.read(&mut buf2) {
-            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e)  => break,
-            Ok(0)   => break,
+            Err(e) => {
+                match e.kind() {
+                    io::ErrorKind::WouldBlock => {
+                        debug!("would have blocked");
+                        break
+                    },
+                    io::ErrorKind::Interrupted => break,
+                    _ => panic!("Got an error: {}", e)
+                }
+            },
+            Ok(0)   => {
+                debug!("hi2");
+                break
+            },
             Ok(len) => len
         };
         debug!("Read {} bytes from local stream", len);
@@ -55,11 +87,19 @@ fn handle_stream(mut remote_stream: TcpStream) -> () {
     let _ = remote_stream.shutdown(Shutdown::Both);
 }
 
+#[derive(RustcDecodable)]
+pub struct AssignedUrl  {
+    port: i32,
+    max_conn_count: i8,
+    id: String,
+    url: String
+}
+
 fn main() {
     env_logger::init().unwrap();
     let client = Client::new();
 
-    let mut res = client.get("http://localhost:1236/?new")
+    let mut res = client.get("http://localtunnel.me/?new")
         .header(Connection::close())
         .send().unwrap();
 
@@ -68,15 +108,18 @@ fn main() {
 
     println!("Response: {}", body);
 
-    let listener = TcpListener::bind("localhost:1236").unwrap();
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                thread::spawn(move || {
-                    handle_stream(stream);
-                });
-            }
-            Err(e) => panic!("Got an error: {}", e)
-        }
-    }
+    let decoded: AssignedUrl = json::decode(&body).unwrap();
+
+    debug!("Decoded: {:?}", decoded.port);
+    debug!("Decoded: {:?}", decoded.max_conn_count);
+    debug!("Decoded: {:?}", decoded.id);
+    debug!("Decoded: {:?}", decoded.url);
+
+    println!("Decoded: {:?}", decoded.url);
+
+    let host = format!("{}:{}", "localtunnel.me", decoded.port);
+
+    let mut remote_stream = TcpStream::connect(&*host).unwrap();
+    // TODO create tunnel cluster
+    handle_stream(remote_stream);
 }
