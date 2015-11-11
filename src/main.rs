@@ -14,12 +14,15 @@ use std::net::{TcpListener, TcpStream, Shutdown};
 use std::time::Duration;
 use std::io::BufWriter;
 use std::thread;
+use std::fmt;
 
 const READ_TIMEOUT_MILLIS: u64 = 100;
 
-fn handle_stream(mut remote_stream: TcpStream) -> () {
-    let host = "localhost:3000";
-    let mut local_stream = TcpStream::connect(host).unwrap();
+fn handle_stream(mut remote_stream: TcpStream, remote_host: String) -> () {
+    let local_host = "localhost:3000";
+    let mut local_stream = TcpStream::connect(local_host).unwrap();
+
+    debug!("establishing tunnel {} <> {}", remote_host, local_host);
 
     remote_stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MILLIS))).unwrap();
     local_stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MILLIS))).unwrap();
@@ -95,6 +98,12 @@ pub struct AssignedUrl  {
     url: String
 }
 
+impl fmt::Debug for AssignedUrl {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "port: {:?}, url: {:?}, max_conn_count: {:?}, id: {:?}", self.port, self.url, self.max_conn_count, self.id)
+    }
+}
+
 fn main() {
     env_logger::init().unwrap();
     let client = Client::new();
@@ -110,16 +119,12 @@ fn main() {
 
     let decoded: AssignedUrl = json::decode(&body).unwrap();
 
-    debug!("Decoded: {:?}", decoded.port);
-    debug!("Decoded: {:?}", decoded.max_conn_count);
-    debug!("Decoded: {:?}", decoded.id);
-    debug!("Decoded: {:?}", decoded.url);
-
-    println!("Decoded: {:?}", decoded.url);
+    debug!("Decoded: {:?}", decoded);
+    println!("{}", decoded.url);
 
     let host = format!("{}:{}", "localtunnel.me", decoded.port);
 
     let mut remote_stream = TcpStream::connect(&*host).unwrap();
     // TODO create tunnel cluster
-    handle_stream(remote_stream);
+    handle_stream(remote_stream, host);
 }
