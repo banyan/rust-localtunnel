@@ -10,7 +10,7 @@ extern crate env_logger;
 use hyper::Client;
 use hyper::header::Connection;
 use std::io::{self, Read, Write};
-use std::net::{TcpListener, TcpStream, Shutdown};
+use std::net::{TcpStream, Shutdown};
 use std::time::Duration;
 use std::io::BufWriter;
 use std::thread;
@@ -90,7 +90,7 @@ fn handle_stream(mut remote_stream: TcpStream, remote_host: String) -> () {
     let _ = remote_stream.shutdown(Shutdown::Both);
 }
 
-#[derive(RustcDecodable)]
+#[derive(Clone, RustcDecodable)]
 pub struct AssignedUrl  {
     port: i32,
     max_conn_count: i8,
@@ -122,9 +122,12 @@ fn main() {
     debug!("Decoded: {:?}", decoded);
     println!("{}", decoded.url);
 
-    let host = format!("{}:{}", "localtunnel.me", decoded.port);
-
-    let mut remote_stream = TcpStream::connect(&*host).unwrap();
-    // TODO create tunnel cluster
-    handle_stream(remote_stream, host);
+    for i in 0..decoded.max_conn_count {
+        let host = format!("{}:{}", "localtunnel.me", decoded.clone().port);
+        thread::spawn(move || {
+            debug!("i: {:?}", i);
+            let mut remote_stream = TcpStream::connect(&*host).unwrap();
+            handle_stream(remote_stream, host);
+        });
+    }
 }
