@@ -18,7 +18,8 @@ use std::fmt;
 
 const READ_TIMEOUT_MILLIS: u64 = 100;
 
-fn handle_stream(mut remote_stream: TcpStream, remote_host: String) -> () {
+fn handle_stream(mut remote_stream: TcpStream, remote_host: String, x: i8) -> () {
+    println!("{}", x);
     let local_host = "localhost:3000";
     let mut local_stream = TcpStream::connect(local_host).unwrap();
 
@@ -122,12 +123,15 @@ fn main() {
     debug!("Decoded: {:?}", decoded);
     println!("{}", decoded.url);
 
-    for i in 0..decoded.max_conn_count {
+    let threads = (0..decoded.max_conn_count).map(|x| {
         let host = format!("{}:{}", "localtunnel.me", decoded.clone().port);
         thread::spawn(move || {
-            debug!("i: {:?}", i);
             let mut remote_stream = TcpStream::connect(&*host).unwrap();
-            handle_stream(remote_stream, host);
-        });
+            handle_stream(remote_stream, host, x);
+        })
+    }).collect::<Vec<_>>();
+
+    for t in threads {
+        let _ = t.join();
     }
 }
